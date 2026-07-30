@@ -24,7 +24,10 @@ import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { FileSystem } from "@/components/explorer/file-system"
 import { ImageThumbnailPreview } from "@/components/explorer/image-thumbnail-preview"
-import type { FileSystemFileItem } from "@/components/explorer/types"
+import type {
+  FileSystemFileItem,
+  FileSystemPreviewOptions,
+} from "@/components/explorer/types"
 import {
   AppIcon,
   CloudServerIcon,
@@ -136,12 +139,13 @@ export function FileBrowser() {
     renameEntry,
     moveEntry,
     refresh,
+    thumbnailHandle,
     isLoading,
     error,
   } = useS3FileSystem(activeConnection)
   const [imagePreviewUrlCache] = React.useState(() => new Map<string, string>())
   const renderFilePreview = React.useCallback(
-    (file: FileSystemFileItem) => {
+    (file: FileSystemFileItem, options?: FileSystemPreviewOptions) => {
       if (!showImagePreviews || getFileKind(file) !== "image") return null
 
       return (
@@ -150,10 +154,18 @@ export function FileBrowser() {
           file={file}
           getFileUrl={getFileUrl}
           urlCache={imagePreviewUrlCache}
+          thumbnailHandle={thumbnailHandle}
+          widthHint={options?.widthHint}
         />
       )
     },
-    [activeConnection?.id, getFileUrl, imagePreviewUrlCache, showImagePreviews]
+    [
+      activeConnection?.id,
+      getFileUrl,
+      imagePreviewUrlCache,
+      showImagePreviews,
+      thumbnailHandle,
+    ]
   )
   const [opened, setOpened] = React.useState<{
     file: FileSystemFileItem

@@ -43,6 +43,13 @@ export async function signFileUrlAction(
   return fileOps.signFileUrl(resolveFiles(ref), key)
 }
 
+export async function signFileUrlsAction(
+  ref: ConnectionRef,
+  keys: string[]
+): Promise<Record<string, string>> {
+  return fileOps.signFileUrls(resolveFiles(ref), keys)
+}
+
 /** Presigned direct-upload descriptor for a browser-to-storage transfer. */
 export async function signUploadUrlAction(
   ref: ConnectionRef,

@@ -9,6 +9,8 @@ import {
 import type { Connection } from "@/lib/storage/connections"
 import * as clientFileOps from "@/lib/storage/file-operations"
 import type { EntryRef, SignedUpload } from "@/lib/storage/files-client"
+import { thumbnailHandleFor } from "@/lib/storage/thumbnails"
+import { createUrlBatcher } from "@/lib/storage/url-batcher"
 import { usePreferencesStore } from "@/lib/store/preferences-store"
 import type {
   FileSystemFileItem,
@@ -22,6 +24,7 @@ import {
   moveEntryAction,
   renameEntryAction,
   signFileUrlAction,
+  signFileUrlsAction,
   signUploadUrlAction,
 } from "@/app/actions/files"
 
@@ -67,6 +70,8 @@ export type S3FileSystem = {
   moveEntry: (item: FileSystemItem, destinationFolder: string) => Promise<void>
   /** Re-fetch the bucket root listing (e.g. after an upload). */
   refresh: () => void
+  /** `null` when the route cannot serve this bucket; see `thumbnailHandleFor`. */
+  thumbnailHandle: string | null
   isLoading: boolean
   error: string | null
 }
@@ -141,6 +146,7 @@ type FileOps = {
     cursor: string | null
   ) => Promise<FileSystemLoadChildrenResult>
   signFileUrl: (key: string) => Promise<string>
+  signFileUrls: (keys: string[]) => Promise<Record<string, string>>
   signUploadUrl: (key: string, contentType?: string) => Promise<SignedUpload>
   createFolder: (path: string) => Promise<void>
   deleteEntry: (item: FileSystemItem) => Promise<void>
@@ -154,6 +160,7 @@ function serverOps(ref: ConnectionRef): FileOps {
   return {
     listFolder: (prefix, cursor) => listFolderAction(ref, prefix, cursor),
     signFileUrl: (key) => signFileUrlAction(ref, key),
+    signFileUrls: (keys) => signFileUrlsAction(ref, keys),
     signUploadUrl: (key, contentType) =>
       signUploadUrlAction(ref, key, contentType),
     createFolder: (path) => createFolderAction(ref, path),
@@ -197,6 +204,7 @@ async function makeClientOps(connection: Connection): Promise<FileOps> {
     listFolder: (prefix, cursor) =>
       clientFileOps.listFolder(files, prefix, cursor),
     signFileUrl: (key) => clientFileOps.signFileUrl(files, key),
+    signFileUrls: (keys) => clientFileOps.signFileUrls(files, keys),
     signUploadUrl: async (key, contentType) => {
       assertWritable()
       return clientFileOps.signUploadUrl(files, key, contentType)
@@ -321,13 +329,24 @@ export function useS3FileSystem(connection: Connection | null): S3FileSystem {
     [opsPromise]
   )
 
-  const getFileUrl = React.useCallback(
-    async (file: FileSystemFileItem) => {
-      const ops = await opsPromise
-      if (!ops) return ""
-      return ops.signFileUrl(file.key ?? file.path)
-    },
+  const urlBatcher = React.useMemo(
+    () =>
+      createUrlBatcher(async (keys) => {
+        const ops = await opsPromise
+        if (!ops) return {}
+        return ops.signFileUrls(keys)
+      }),
     [opsPromise]
+  )
+
+  const getFileUrl = React.useCallback(
+    (file: FileSystemFileItem) => urlBatcher.get(file.key ?? file.path),
+    [urlBatcher]
+  )
+
+  const thumbnailHandle = React.useMemo(
+    () => thumbnailHandleFor(connection),
+    [connection]
   )
 
   const uploadFile = React.useCallback(
@@ -433,6 +452,7 @@ export function useS3FileSystem(connection: Connection | null): S3FileSystem {
     renameEntry,
     moveEntry,
     refresh,
+    thumbnailHandle,
     isLoading: Boolean(
       connection && (isLoading || loadedConnection !== connection)
     ),
