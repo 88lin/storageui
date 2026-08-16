@@ -10,10 +10,13 @@ export function isAuthEnabled(): boolean {
 }
 
 function sessionSecret(): string {
-  return (
-    process.env.AUTH_SECRET ||
-    `${process.env.AUTH_USERNAME ?? ""}:${process.env.AUTH_PASSWORD ?? ""}`
-  )
+  return [
+    process.env.AUTH_SECRET ?? "",
+    process.env.AUTH_USERNAME ?? "",
+    process.env.AUTH_PASSWORD ?? "",
+  ]
+    .map((part) => `${part.length}:${part}`)
+    .join("")
 }
 
 export function verifyCredentials(username: string, password: string): boolean {
@@ -47,6 +50,31 @@ export async function verifySessionToken(
 ): Promise<boolean> {
   if (!token) return false
   return timingSafeEqual(token, await createSessionToken())
+}
+
+/**
+ * Session check for routes that opt out of the global proxy. `/api/upload` has
+ * to: whenever middleware runs for a path, Next clones the request body and
+ * truncates it at `middlewareClientMaxBodySize` (10MB by default), which breaks
+ * every upload past that size. Raising the limit is not the answer — it would
+ * buffer whole files in memory just to hand middleware a copy it never reads.
+ */
+export async function isRequestAuthorized(request: Request): Promise<boolean> {
+  if (!isAuthEnabled()) return true
+  return verifySessionToken(readCookie(request, SESSION_COOKIE_NAME))
+}
+
+export function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get("cookie")
+  if (!header) return null
+
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=")
+    if (separator < 0) continue
+    if (part.slice(0, separator).trim() !== name) continue
+    return decodeURIComponent(part.slice(separator + 1).trim())
+  }
+  return null
 }
 
 function toHex(bytes: Uint8Array): string {
